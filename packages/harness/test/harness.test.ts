@@ -220,7 +220,7 @@ describe("harness: the prompt", () => {
     const plan = harnessPlan(["token"], ALL);
     const p = answerPrompt(ask({ harness: { history: [], texts: [], plan } }), null);
     assert.equal(p.system.length, 3);
-    assert.match(p.system[0]!, /^\[q-[0-9a-f]{8}\]\nyou are the queen of crawlnet/, "the canary is new each process");
+    assert.match(p.system[0]!, /^\[q-[0-9a-f]{8}\]\nyou are a research agent running a fork of crawlnet/, "the canary is new each process");
     assert.match(p.system[0]!, /the trench read/);
     assert.doesNotMatch(p.system[1]!, /about crawlnet \(trusted/, "no fact sheet on a coin check");
     assert.match(p.system[2]!, /^this question: token/);

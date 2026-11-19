@@ -57,7 +57,7 @@ describe("ask", () => {
     assert.deepEqual(a.followups, ["show its fees"]);
     const first = seen[0] as { tools?: { function: { name: string } }[]; messages: { role: string; content: string }[] };
     assert.deepEqual(first.tools?.map((t) => t.function.name), ["protocol_tvl"], "only the plan's functions are offered");
-    assert.match(first.messages[0]!.content, /you are the queen of crawlnet/);
+    assert.match(first.messages[0]!.content, /fork of crawlnet's queen harness/);
   });
 
   it("markdown with a visual block is the answer when the model ignores the reply format", async () => {

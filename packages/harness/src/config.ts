@@ -30,6 +30,8 @@ export interface HarnessConfig {
   ownMint: string | null;
   /** What the harness says about itself, trusted (ABOUT_FILE: a text file; none = no about block) */
   about: string | null;
+  /** Local deployer/serial-rugger roster directory (ROSTER_DIR); none = no roster lookup */
+  rosterDir: string | null;
 }
 
 function num(v: string | undefined, def: number): number {
@@ -47,7 +49,8 @@ function reasoningBody(baseUrl: string, thinking: QueenLlmConfig["thinking"]): R
 }
 
 export function loadLlmConfig(env: NodeJS.ProcessEnv): QueenLlmConfig {
-  const baseUrl = (env.LLM_BASE_URL?.trim() || "https://openrouter.ai/api/v1").replace(/\/+$/, "");
+  // LLM_ADAPTER_URL is an alias for a local or self-hosted OpenAI-compatible adapter; LLM_BASE_URL wins when both are set
+  const baseUrl = (env.LLM_BASE_URL?.trim() || env.LLM_ADAPTER_URL?.trim() || "https://openrouter.ai/api/v1").replace(/\/+$/, "");
   const raw = (env.LLM_THINKING ?? "").trim().toLowerCase();
   const thinking: QueenLlmConfig["thinking"] = raw === "off" || raw === "low" || raw === "max" ? raw : "high";
   const extraBody = reasoningBody(baseUrl, thinking);
@@ -90,5 +93,6 @@ export function loadHarnessConfig(env: NodeJS.ProcessEnv): HarnessConfig {
     jevKey: env.JEV_KEY?.trim() || null,
     ownMint: /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(mint) ? mint : null,
     about,
+    rosterDir: env.ROSTER_DIR?.trim() || null,
   };
 }
