@@ -1,5 +1,9 @@
 # queen-harness
 
+A fork of [Crawlnet/queen-harness](https://github.com/Crawlnet/queen-harness) (MIT). Crawlnet built this harness and the
+Queen models, then closed on 5 November 2026 and left the work public. This repository keeps their license and credit,
+and layers on our research taste, gate-verdict rules, and an optional local deployer roster.
+
 The research harness behind the queen of [crawlnet](https://crawlnet.network): a crypto research agent for traders in the
 trenches. Ask it about a coin, a wallet, a caller, what is running today, a protocol or a claim, and it reads the chain,
 the markets, X and today's narratives live, then answers like a trencher: the verdict first, numbers as returned, the
@@ -11,6 +15,8 @@ decides what to read, reads it, hands the model a dossier and a short list of fu
 ```bash
 npm install
 cp .env.example .env        # set LLM_API_KEY and LLM_MODEL at least
+# optional: ROSTER_DIR=./data/roster  (see docs/ROSTER.md)
+# optional: LLM_ADAPTER_URL=http://127.0.0.1:8080/v1  (a local OpenAI-compatible adapter)
 npm run ask -- "check DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263"
 npm run serve               # POST /v1/ask on http://127.0.0.1:8790
 ```
@@ -43,7 +49,7 @@ posts, wallet, odds) for a UI to draw.
 
 | Path | What |
 |---|---|
-| `packages/harness` | the answer: `ask.ts` (the run above), `harness.ts` (kinds, plans, playbooks, the prompt), `scan.ts` (the dossier), `trench.ts` (the trench read), `brain.ts` (the model loop, the reply's checks), `clustermap.ts`, `walletmem.ts` (wallets seen across coins), `page.ts` (the page reader), `cli.ts`, `server.ts` |
+| `packages/harness` | the answer: `ask.ts` (the run above), `harness.ts` (kinds, plans, playbooks, the prompt), `taste.ts` (our gate and voice layer), `roster.ts` (optional local deployer roster), `scan.ts` (the dossier), `trench.ts` (the trench read), `brain.ts` (the model loop, the reply's checks), `clustermap.ts`, `walletmem.ts` (wallets seen across coins), `page.ts` (the page reader), `cli.ts`, `server.ts` |
 | `packages/tools` | 43 functions over free and keyed sources, argument validation, budgets per answer, minute and day, a result cache, the redaction guard |
 | `packages/shared` | the types the two share, the severity scale, hedged requests |
 | `services` | two background services whose files the narrative tools read: `migration` (pump.fun and StonkFun runners and metas) and `ai-x-radar` (AI ideas on X) |
@@ -51,11 +57,13 @@ posts, wallet, odds) for a UI to draw.
 ## Keys
 
 The model's key is the only one required. Every source below adds functions; without its key they are simply not
-offered.
+offered. `LLM_BASE_URL` is any OpenAI-compatible chat completions API with tool calls; `LLM_ADAPTER_URL` is an alias
+for a local or self-hosted adapter (our fine-tune later). `ROSTER_DIR` is optional and local-only: see [docs/ROSTER.md](docs/ROSTER.md).
 
 | Set | Adds |
 |---|---|
-| `LLM_API_KEY`, `LLM_MODEL` (`LLM_BASE_URL`, default OpenRouter) | the model |
+| `LLM_API_KEY`, `LLM_MODEL` (`LLM_BASE_URL` or `LLM_ADAPTER_URL`, default OpenRouter) | the model |
+| `ROSTER_DIR` | a local deployer / serial-rugger roster, looked up into the dossier (never committed) |
 | nothing | DefiLlama (tvl, fees, yields, stablecoins, unlocks), DEX Screener, GeckoTerminal, Jupiter, Polymarket, RugCheck and GoPlus, pump.fun's callouts, GitHub, RDAP and certificate logs, the chain over the public RPC, the page reader |
 | `SOLANA_RPC_URLS` or `HELIUS_API_KEYS` | holder reads on big coins (the public RPC refuses them), the holder spread and the asset card |
 | `HELIUS_LAUNCH_KEYS` | the launch read (`sol_launch`), who bought before a call (`call_frontrun`, `caller_side_wallets`) |
@@ -92,9 +100,11 @@ const a = await harness.ask({ question: "what's running on pump.fun right now?" 
 
 ## The persona
 
-The prompt is the queen's persona: `harness.ts` (`HEAD`, `HOW`, `TRUE`, `VOICE`, `BLOCKS`, `HARD`,
-`REPLY`, `PLAYBOOKS`), `trench.ts` (the trench read) and `say.ts`. `ABOUT_FILE` is the trusted text she answers
-questions about herself from, and `OWN_MINT` the token she speaks for. Change those to make her someone else.
+The prompt is the queen's persona, plus our taste layer: `harness.ts` (`HEAD`, `HOW`, `TRUE`, `VOICE`, `TASTE`,
+`BLOCKS`, `HARD`, `REPLY`, `PLAYBOOKS`), `taste.ts` (verdict first, numbers as returned, worst finding first, no
+shilling, our gate vetoes and fail-closed rules), `trench.ts` (the trench read) and `say.ts`. `ABOUT_FILE` is the
+trusted text it answers questions about itself from, and `OWN_MINT` the token it speaks for. Change those to make it
+someone else. [docs/TASTE.md](docs/TASTE.md) is the map of what we added and what we left out (no sizing, no signing).
 
 ## Tests
 
@@ -104,4 +114,4 @@ npm test
 
 ## License
 
-MIT.
+MIT. Copyright (c) 2026 crawlnet. This fork keeps that license and notice; our additions are under the same terms.

@@ -15,6 +15,7 @@ import { CLUSTERS_FILL_MS, withClusters } from "./clustermap.ts";
 import type { HarnessConfig } from "./config.ts";
 import { coinInView, harnessPlan, harnessRead, larpChecks, planReads, smallTalk, xReadOf, type HarnessIntent, type HarnessPlan, type PlanRead, type SiteTx } from "./harness.ts";
 import { jevIntent } from "./jev.ts";
+import { loadRoster } from "./roster.ts";
 import { chatScanResult, DEEP_TOOLS, runScan, scanAskOf, scanBrief, settleDeep, withLateChecks, type ScanAsk, type ScanCall, type ScanFacts } from "./scan.ts";
 import { memoryLines, rememberingTools, rolesFromReads, WalletMemory } from "./walletmem.ts";
 import type { Db } from "@crawlnet/shared";
@@ -88,6 +89,7 @@ export function createHarness(deps: HarnessDeps): Harness {
   const now = deps.now ?? Date.now;
   const doFetch = deps.fetch ?? fetch;
   const memory = deps.db ? new WalletMemory(deps.db, now) : null;
+  const roster = loadRoster(cfg.rosterDir);
   const tools: ToolsModule = memory ? rememberingTools(deps.tools, memory, now) : deps.tools;
   const memoryOf = memory
     ? (mint: string, reads: { launch: Record<string, unknown> | null; links: Record<string, unknown> | null }): string[] => {
@@ -156,7 +158,7 @@ export function createHarness(deps: HarnessDeps): Harness {
       return { result, log: line };
     };
     try {
-      const facts = await runScan(ask, call, (n) => names.has(n), now(), { behind: true, ...(o.deep ? { deep: true, ...(memoryOf ? { memory: memoryOf } : {}) } : {}) });
+      const facts = await runScan(ask, call, (n) => names.has(n), now(), { behind: true, ...(roster.size > 0 ? { roster } : {}), ...(o.deep ? { deep: true, ...(memoryOf ? { memory: memoryOf } : {}) } : {}) });
       // the model reads totals and the key rows, not the raw pool and holder lists; trimmed in place: the checks left
       // running land in these same facts after the scan, and the answer's token block is built again from them
       facts.results = facts.results.map((r) => ({ ...r, result: chatScanResult(r.name, r.result, facts.address) }));

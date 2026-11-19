@@ -10,6 +10,7 @@
 import type { Severity, ToolResult } from "@crawlnet/shared";
 import { blockStatus, byShare, SEVERITY, SEVERITY_ORDER, severityOf, verdictLevel, worst } from "@crawlnet/shared";
 import type { ToolCallLog } from "./brain.ts";
+import { hitForRole, keyOf, type Roster, type RosterHit } from "./roster.ts";
 import { clusterOf, creatorRead, DEV_MAJORITY_PCT, devGone, devTrailOf, launchParts, sideWallets, spreadOf, storyOf, type DevRead } from "./trench.ts";
 
 /** What a question asks to scan: an address (with its chain) or a ticker, and what the asker cares about most. */
@@ -246,6 +247,8 @@ export interface ScanFacts {
    * "idle"; [] when they stand. Logged as these words only, never a value.
    */
   unreliable: string[];
+  /** A local roster hit on the creator or the scanned wallet, when a roster was given and one matched */
+  roster?: RosterHit | null;
   /**
    * The deeper reads of a solana token (ScanOptions.deep): each one's data, null when it failed, "running" when it was
    * not back by the scan's end (it runs on: the model's own call of it joins it); absent when not asked
@@ -313,6 +316,8 @@ export interface ScanOptions {
    * out (ScanDeep.memory)
    */
   memory?: (mint: string, reads: { launch: Record<string, unknown> | null; links: Record<string, unknown> | null }) => string[];
+  /** Optional local deployer roster (ROSTER_DIR): looked up once the creator or wallet is known */
+  roster?: Roster;
 }
 
 /**
@@ -346,6 +351,7 @@ export async function runScan(ask: ScanAsk, call: ScanCall, has: (name: string) 
     results: [],
     calls: [],
   };
+  if (opts.roster) ROSTER_OF.set(facts, opts.roster);
   /** The scan's data is what its calls return before it is done (a call left running past it changes only its facts: whenBack) */
   let reading = true;
   const run = async (name: string, args: Record<string, unknown>, ms = SCAN_CALL_MS): Promise<ToolResult | undefined> => {
@@ -700,6 +706,8 @@ export function settleDeep(f: ScanFacts): void {
   f.flags = [...f.flags.filter((x) => !was.flags.includes(x)), ...rows.flags];
   f.notes = [...f.notes.filter((x) => !was.notes.includes(x)), ...rows.notes];
   DEEP_ROWS.set(f, rows);
+  const roster = ROSTER_OF.get(f);
+  if (roster) applyRoster(f, roster);
 }
 
 /** The function of each deeper read (the scan asks them, the dossier names those still running, an answer never names one) */
@@ -1012,6 +1020,70 @@ const LP_FLAG = "its pools' lp is not locked or burned: the deployer can pull it
 const RUGGED_FLAG = "rugcheck marks it rugged: its liquidity was pulled";
 
 /** The flags, the strong facts and the notes code reads from the facts (thresholds on numbers a source returned). */
+
+const ROSTER_OF = new WeakMap<ScanFacts, Roster>();
+const ROSTER_MARK = "local roster:";
+
+/** Addresses the roster should be asked about: the creator, a wallet scan, and a launch read's dev wallet */
+export function rosterAddresses(facts: ScanFacts): { address: string; role: string }[] {
+  const out: { address: string; role: string }[] = [];
+  const seen = new Set<string>();
+  const add = (address: string | null | undefined, role: string): void => {
+    if (!address) return;
+    const k = `${keyOf(address)}:${role}`;
+    if (seen.has(k)) return;
+    seen.add(k);
+    out.push({ address, role });
+  };
+  if (facts.dev && facts.dev.found) add(facts.dev.creator, "creator");
+  if (facts.kind === "wallet") add(facts.address, "wallet");
+  const launch = facts.deep?.launch;
+  if (launch && launch !== "running") {
+    for (const addr of launchDevAddresses(launch)) add(addr, "launch wallet");
+  }
+  return out;
+}
+
+function launchDevAddresses(d: Record<string, unknown>): string[] {
+  const out: string[] = [];
+  const add = (v: unknown): void => {
+    if (typeof v === "string" && v.length >= 32) out.push(v);
+  };
+  add(d.creator);
+  add(d.dev);
+  add(d.dev_wallet);
+  if (Array.isArray(d.wallets)) {
+    for (const w of d.wallets) {
+      if (!w || typeof w !== "object" || Array.isArray(w)) continue;
+      const o = w as Record<string, unknown>;
+      const role = typeof o.role === "string" ? o.role.toLowerCase() : "";
+      if (role === "dev" || role === "creator" || role === "deployer") add(o.wallet ?? o.address);
+    }
+  }
+  return out;
+}
+
+/**
+ * Look the creator or scanned wallet up on a local roster and write one dossier line.
+ * Safe to call again (settleDeep): previous roster lines are replaced. Evidence never enters the facts.
+ */
+export function applyRoster(facts: ScanFacts, roster: Roster): void {
+  facts.flags = facts.flags.filter((x) => !x.startsWith(ROSTER_MARK));
+  facts.notes = facts.notes.filter((x) => !x.startsWith(ROSTER_MARK));
+  facts.roster = null;
+  let pick: RosterHit | null = null;
+  for (const { address, role } of rosterAddresses(facts)) {
+    const raw = roster.lookup(address, facts.chain);
+    if (!raw) continue;
+    const hit = hitForRole(raw, role);
+    if (!pick || (hit.veto && !pick.veto)) pick = hit;
+  }
+  if (!pick) return;
+  facts.roster = pick;
+  if (pick.veto) facts.flags.push(pick.reason);
+  else facts.notes.push(pick.reason);
+}
+
 function finish(facts: ScanFacts): ScanFacts {
   // market numbers that cannot be true are never printed nor read for a flag: the dollar figures go (the price behind
   // them is the listing's too), pools, age and trades stay
@@ -1094,6 +1166,8 @@ function finish(facts: ScanFacts): ScanFacts {
     DEEP_ROWS.set(facts, rows);
   }
   if (facts.kind === "none" && facts.notes.length === 0) facts.notes.push("nothing found for it");
+  const roster = ROSTER_OF.get(facts);
+  if (roster) applyRoster(facts, roster);
   return facts;
 }
 
@@ -1255,6 +1329,8 @@ export function tokenChecks(f: ScanFacts): TokenBlockCheck[] {
   const out: { label: string; level: Severity; value: string }[] = [];
   const add = (label: string, level: Severity, value: string) => out.push({ label, level, value });
   const { market: m, authorities: a, holders: h } = f;
+  if (f.roster?.veto) add("roster", "danger", f.roster.reason);
+  else if (f.roster) add("roster", "warn", f.roster.reason);
   if (a) {
     add("mint authority", a.mint === "on" ? "danger" : "ok", a.mint);
     add("freeze authority", a.freeze === "on" ? "danger" : "ok", a.freeze);
